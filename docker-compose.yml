@@ -6,6 +6,7 @@ services:
     environment:
       - SLSKD_HOST=http://192.168.1.7:5030
       - SLSKD_API_KEY=OXMRJ43VWQU71F9L68TZYHNP
+      - SLSKD_CYCLE_PAUSE_MINUTES=30
     volumes:
       - /ssd/appdata/slskd_wanted/wanted.csv:/app/wanted.csv
     ports:

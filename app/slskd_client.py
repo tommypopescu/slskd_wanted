@@ -16,9 +16,7 @@ def safe_json(r):
         return {"error": "invalid_json", "text": r.text}
 
 def search(query):
-    payload = {
-        "searchText": query
-    }
+    payload = {"searchText": query}
     r = requests.post(f"{HOST}/api/v0/searches", json=payload, headers=HEADERS)
     return safe_json(r)
 

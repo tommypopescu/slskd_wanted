@@ -1,5 +1,7 @@
 import time
 import pandas as pd
+import requests
+import os
 from slskd_client import (
     search,
     get_search_responses,
@@ -8,13 +10,23 @@ from slskd_client import (
 )
 
 CSV_PATH = "wanted.csv"
+POLLING_SECONDS = 90
 
-# polling 90 secunde pentru fiecare melodie
-POLLING_SECONDS = 90  
+API_BASE = "http://127.0.0.1:8000"   # worker și API sunt în același container
 
 
 def log(msg):
     print(msg, flush=True)
+
+
+def get_cycle_pause():
+    """Citește pauza direct din API /config."""
+    try:
+        cfg = requests.get(f"{API_BASE}/config").json()
+        minutes = int(cfg.get("cycle_pause_minutes", 30))
+        return minutes * 60
+    except:
+        return 1800  # fallback
 
 
 def load_df():
@@ -29,7 +41,6 @@ def save_df(df):
 
 
 def normalize_downloads_response(data):
-    """slskd v0 poate întoarce fie dict, fie listă."""
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -40,26 +51,18 @@ def normalize_downloads_response(data):
 def get_completed_filenames():
     data = list_downloads()
     items = normalize_downloads_response(data)
-
-    completed = {
+    return {
         item.get("fileName", "")
         for item in items
         if item.get("state") == "Completed"
     }
-    return completed
 
 
 def normalize_search_response(data):
-    """
-    slskd v0 poate întoarce:
-      -> { "items": [...] }
-      -> [ {...}, {...} ]
-    """
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
-        if "items" in data and isinstance(data["items"], list):
-            return data["items"]
+        return data.get("items", [])
     return []
 
 
@@ -68,14 +71,12 @@ def search_for_mp3_320(query):
 
     s = search(query)
     search_id = s.get("id")
-
     if not search_id:
         log(f"[ERROR] Search ID invalid pentru '{query}'.")
         return None
 
     log(f"[SEARCH] ID: {search_id}")
 
-    # Poll 90 secunde pentru rezultate
     for sec in range(POLLING_SECONDS):
         time.sleep(1)
 
@@ -83,14 +84,12 @@ def search_for_mp3_320(query):
         results = normalize_search_response(responses)
 
         if not results:
-            # log o dată la 5 secunde
             if sec % 5 == 0:
                 log(f"[SEARCH] ({sec+1}/{POLLING_SECONDS}) fără rezultate încă…")
             continue
 
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
-        # Filtrăm după MP3 320
         for item in results:
             f = item.get("file", {})
             ext = f.get("extension", "").lower()
@@ -100,9 +99,9 @@ def search_for_mp3_320(query):
                 log(f"[FOUND] MP3 320kbps → {f.get('filePath')}")
                 return item["username"], f["filePath"]
 
-        log("[SEARCH] Rezultate găsite, dar fără MP3 320.")
+        log("[SEARCH] Rezultate, dar fără MP3 320.")
 
-    log(f"[TIMEOUT] Nu am găsit MP3 320 pentru '{query}' în 90 secunde.")
+    log(f"[TIMEOUT] Nu am găsit MP3 320 pentru '{query}' în 90 sec.")
     return None
 
 
@@ -113,7 +112,7 @@ def download_until_complete(username, filepath, query):
     while True:
         completed = get_completed_filenames()
         if any(query.lower() in x.lower() for x in completed):
-            log(f"[COMPLETE] Descărcare finalizată pentru '{query}'")
+            log(f"[COMPLETE] Descărcare finalizată: {query}")
             return True
         time.sleep(5)
 
@@ -122,7 +121,7 @@ while True:
     df = load_df()
 
     if df.empty:
-        log("[WORKER] Lista goală. Re-verific în 60 sec.")
+        log("[WORKER] Lista goală. Reverific în 60 sec.")
         time.sleep(60)
         continue
 
@@ -134,7 +133,6 @@ while True:
         log(f"   Procesare: {query}")
         log("====================")
 
-        # Verificăm dacă e deja descărcat
         completed = get_completed_filenames()
         if any(query.lower() in x.lower() for x in completed):
             log(f"[SKIP] '{query}' este deja descărcat — șterg din listă.")
@@ -142,19 +140,18 @@ while True:
             save_df(df)
             continue
 
-        # Căutare 90s
         result = search_for_mp3_320(query)
 
         if not result:
-            log(f"[NEXT] Trec la următoarea melodie.")
+            log(f"[NEXT] Trec la următorul.")
             continue
 
         username, filepath = result
 
-        # Descărcăm și așteptăm finalizarea
         if download_until_complete(username, filepath, query):
             df = df[df["id"] != entry_id]
             save_df(df)
 
-    log("[LOOP] Am terminat runda. Revin în 2 minute.")
-    time.sleep(120)
+    pause = get_cycle_pause()
+    log(f"[LOOP] Am terminat runda. Revin în {pause//60} minute.\n")
+    time.sleep(pause)
