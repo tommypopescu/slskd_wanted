@@ -61,16 +61,22 @@ def search_for_mp3_320(query):
     for sec in range(POLLING_SECONDS):
         time.sleep(1)
 
-        responses = get_search_responses(search_id)
-        results = responses.get("items", [])
+responses = get_search_responses(search_id)
 
-        if not results:
-            if sec % 5 == 0:
-                log(f"[SEARCH] ({sec+1}/{POLLING_SECONDS}) fără rezultate încă…")
-            continue
+# Normalizare răspuns API (slskd v0 poate întoarce listă SAU dict)
+if isinstance(responses, list):
+    results = responses
+elif isinstance(responses, dict):
+    results = responses.get("items", [])
+else:
+    results = []
 
-        log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
+if not results:
+    if sec % 5 == 0:
+        log(f"[SEARCH] ({sec+1}/{POLLING_SECONDS}) fără rezultate încă…")
+    continue
 
+log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
         # Filtrăm doar MP3 320
         for item in results:
             f = item.get("file", {})
