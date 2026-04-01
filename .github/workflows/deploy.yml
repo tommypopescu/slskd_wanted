@@ -31,7 +31,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: app/Dockerfile      # 🔥 FIX 1: locația corectă a Dockerfile-ului
+          file: Dockerfile
+          context: .      
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/muserrenamer:latest
