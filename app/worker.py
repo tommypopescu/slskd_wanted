@@ -9,22 +9,17 @@ from slskd_client import (
 
 CSV_PATH = "wanted.csv"
 
-# 15 minute între reîncercări dacă nu s-a găsit 320
-SEARCH_REPEAT_INTERVAL = 15 * 60
-
-# cât timp pollăm pentru rezultate după ce am pornit search
-POLLING_SECONDS = 30
+# 90 secunde polling per query
+POLLING_SECONDS = 90  
 
 
 def log(msg):
-    """Log out cu flush pentru a apărea în docker logs instant."""
     print(msg, flush=True)
 
 
 def load_df():
     try:
-        df = pd.read_csv(CSV_PATH)
-        return df
+        return pd.read_csv(CSV_PATH)
     except:
         return pd.DataFrame(columns=["id", "query"])
 
@@ -34,7 +29,6 @@ def save_df(df):
 
 
 def get_completed_filenames():
-    """Returnează numele fișierelor complet descărcate."""
     data = list_downloads()
     items = data.get("items", [])
     completed = {
@@ -45,23 +39,19 @@ def get_completed_filenames():
     return completed
 
 
-def poll_search_for_mp3_320(query):
-    """
-    Pornește căutarea și poll-ează timp de 30 secunde
-    până când apare un rezultat MP3 320kbps.
-    """
+def search_for_mp3_320(query):
     log(f"[SEARCH] Pornesc căutare pentru: {query}")
 
     s = search(query)
     search_id = s.get("id")
 
     if not search_id:
-        log(f"[ERROR] Search ID invalid pentru '{query}'.")
+        log(f"[ERROR] Search ID invalid pentru '{query}'")
         return None
 
-    log(f"[SEARCH] ID căutare: {search_id}")
+    log(f"[SEARCH] ID: {search_id}")
 
-    # POLLING REZULTATE
+    # Poll 90 sec
     for sec in range(POLLING_SECONDS):
         time.sleep(1)
 
@@ -69,12 +59,13 @@ def poll_search_for_mp3_320(query):
         results = responses.get("items", [])
 
         if not results:
-            log(f"[SEARCH] ({sec+1}/{POLLING_SECONDS}) fără rezultate încă…")
+            if sec % 5 == 0:
+                log(f"[SEARCH] ({sec+1}/{POLLING_SECONDS}) fără rezultate încă…")
             continue
 
-        log(f"[SEARCH] Am primit {len(results)} rezultate pentru '{query}'")
+        log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
-        # Căutăm MP3 320
+        # Filtrăm doar MP3 320
         for item in results:
             f = item.get("file", {})
             ext = f.get("extension", "").lower()
@@ -84,22 +75,20 @@ def poll_search_for_mp3_320(query):
                 log(f"[FOUND] MP3 320kbps → {f.get('filePath')}")
                 return item["username"], f["filePath"]
 
-        log("[SEARCH] Rezultate gasite, dar niciun MP3 320kbps.")
+        log("[SEARCH] Rezultate, dar fără MP3 320…")
 
-    log(f"[SEARCH] Timpul de 30s s-a terminat fără MP3 320 pentru '{query}'.")
+    log(f"[SEARCH] Timeout 90s fără MP3 320 pentru '{query}'")
     return None
 
 
 def download_until_complete(username, filepath, query):
-    """Inițiază descărcarea și monitorizează până este completă."""
-    log(f"[DOWNLOAD] Pornesc descărcarea: {query} → {filepath}")
+    log(f"[DOWNLOAD] Pornesc descărcarea pentru '{query}'")
     enqueue_download(username, filepath)
 
-    # Poll pentru finalizare
     while True:
         completed = get_completed_filenames()
         if any(query.lower() in x.lower() for x in completed):
-            log(f"[COMPLETE] Descărcare completă pentru '{query}'")
+            log(f"[COMPLETE] Descărcare finalizată: {query}")
             return True
         time.sleep(5)
 
@@ -108,7 +97,7 @@ while True:
     df = load_df()
 
     if df.empty:
-        log("[WORKER] Lista goală. Re-verific peste 1 minut.")
+        log("[WORKER] Lista este goală. Re-verific în 60 sec.")
         time.sleep(60)
         continue
 
@@ -116,35 +105,31 @@ while True:
         query = row["query"]
         entry_id = row["id"]
 
-        log(f"\n====================")
+        log("\n====================")
         log(f"   Procesare: {query}")
-        log(f"====================")
+        log("====================")
 
-        # 1. Verificăm dacă e deja descărcată
+        # Verificăm dacă deja este descărcat
         completed = get_completed_filenames()
         if any(query.lower() in x.lower() for x in completed):
-            log(f"[SKIP] '{query}' deja descărcat. Îl șterg din listă.")
+            log(f"[SKIP] '{query}' este deja descărcat — șterg din listă.")
             df = df[df["id"] != entry_id]
             save_df(df)
             continue
 
-        # 2. Pornim căutarea + polling rezultate
-        result = poll_search_for_mp3_320(query)
+        # Căutare + polling 90 sec
+        result = search_for_mp3_320(query)
 
         if not result:
-            log(f"[WAIT] '{query}' nu a fost găsit în 320. Reîncerc peste 15 minute.")
-            time.sleep(SEARCH_REPEAT_INTERVAL)
+            log(f"[NEXT] Nu am găsit MP3 320 pentru '{query}'. Trec la următorul.")
             continue
 
         username, filepath = result
 
-        # 3. Descărcăm până la finalizare
-        ok = download_until_complete(username, filepath, query)
-
-        # 4. Ștergem din CSV
-        if ok:
+        # Descărcăm până la completare
+        if download_until_complete(username, filepath, query):
             df = df[df["id"] != entry_id]
             save_df(df)
 
-    log("[LOOP] Runda completă. Revin în 60 secunde.\n")
-    time.sleep(60)
+    log("[LOOP] Runda completă terminată. Revin în 2 minute.\n")
+    time.sleep(120)
