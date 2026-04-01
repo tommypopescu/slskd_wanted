@@ -64,4 +64,3 @@ def enqueue_download(username, file_path):
         headers=HEADERS
     )
     return safe_json(r)
-``
