@@ -5,12 +5,16 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # rezolvă warning-ul Node20
+
 jobs:
   docker:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
-      packages: write   # required to push to GHCR
+      packages: write   # necesar pentru GHCR
 
     steps:
       - name: Checkout
@@ -27,8 +31,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: app/Dockerfile      # 🔥 FIX 1: locația corectă a Dockerfile-ului
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/muserrenamer:latest
             ghcr.io/${{ github.repository_owner }}/muserrenamer:${{ github.sha }}
+          platforms: linux/amd64    # opțional dar recomandat
