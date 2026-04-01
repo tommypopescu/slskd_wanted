@@ -1,0 +1,12 @@
+
+<!DOCTYPE html><html><body>
+<h1>Wanted List Editor</h1>
+<input id='newQuery'/><button onclick='add()'>Add</button>
+<table id='table' border='1'></table>
+<script>
+async function load(){let r=await fetch('/wanted');let d=await r.json();let t=document.getElementById('table');t.innerHTML='<tr><th>Query</th><th>Actions</th></tr>';d.forEach(x=>{let r=document.createElement('tr');r.innerHTML=`<td><input value="${x.query}" onchange="update('${x.id}',this.value)"></td><td><button onclick="delItem('${x.id}')">Delete</button></td>`;t.appendChild(r);});}
+async function add(){let q=document.getElementById('newQuery').value;await fetch('/wanted',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});load();}
+async function update(id,q){await fetch('/wanted/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});}
+async function delItem(id){await fetch('/wanted/'+id,{method:'DELETE'});load();}
+load();
+</script></body></html>

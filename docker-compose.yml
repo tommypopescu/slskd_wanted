@@ -1,0 +1,12 @@
+
+version: '3.9'
+services:
+  wanted-app:
+    build: ./app
+    container_name: wanted-app
+    environment:
+      - SLSKD_HOST=http://slskd:5030
+      - SLSKD_API_KEY=TOKENUL_TAU
+    volumes:
+      - ./app/wanted.csv:/app/wanted.csv
+    restart: always
