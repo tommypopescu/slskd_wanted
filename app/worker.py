@@ -7,31 +7,26 @@ from slskd_client import (
     search,
     get_search_responses,
     list_downloads,
-    enqueue_download
+    enqueue_download,
+    browse_user
 )
 
 CSV_PATH = "wanted.csv"
 POLLING_SECONDS = 90
-API_BASE = "http://127.0.0.1:8000"  # API-ul rulează în același container
+API_BASE = "http://127.0.0.1:8000"
 
 
 def log(msg):
     print(msg, flush=True)
 
 
-# ---------------- CONFIG ----------------
-
 def get_cycle_pause():
-    """Citește pauza dintre cicluri direct din API /config."""
     try:
         cfg = requests.get(f"{API_BASE}/config").json()
-        minutes = int(cfg.get("cycle_pause_minutes", 30))
-        return minutes * 60
+        return int(cfg.get("cycle_pause_minutes", 30)) * 60
     except:
-        return 1800  # fallback 30 minute
+        return 1800
 
-
-# ---------------- CSV OPERATIONS ----------------
 
 def load_df():
     try:
@@ -44,10 +39,7 @@ def save_df(df):
     df.to_csv(CSV_PATH, index=False)
 
 
-# ---------------- NORMALIZARE RĂSPUNSURI ----------------
-
 def normalize_downloads_response(data):
-    """slskd poate întoarce listă sau dict cu 'items'."""
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -66,7 +58,6 @@ def get_completed_filenames():
 
 
 def normalize_search_response(data):
-    """slskd v0 poate întoarce listă SAU dict {items:[]}"""
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -74,14 +65,25 @@ def normalize_search_response(data):
     return []
 
 
-# ---------------- SEARCH + FILTRARE ----------------
+def find_real_file_path(username, raw_filename):
+    """Caut în browse filePath REAL (case‑sensitive, exact)."""
+    browse = browse_user(username)
+
+    if not isinstance(browse, dict):
+        return None
+
+    files = browse.get("files", [])
+    target = os.path.basename(raw_filename).lower()
+
+    for f in files:
+        base = os.path.basename(f.get("filename", "")).lower()
+        if base == target:
+            return f.get("filePath")  # EXACT AȘA! NU MODIFICI NIMIC
+
+    return None
+
 
 def search_for_good_file(query):
-    """
-    Găsește MP3 320kbps / FLAC / MP3 > 6MB din structura reală
-    (items[].files[]), conform debug-ului real furnizat.
-    """
-
     log(f"[SEARCH] Pornesc căutare pentru: {query}")
 
     s = search(query)
@@ -106,67 +108,47 @@ def search_for_good_file(query):
 
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
-        # ITERĂM REZULTATELE REALE (user → files[])
         for item in results:
             user = item.get("username")
             files = item.get("files", [])
 
             for f in files:
-                filename = f.get("filename", "").lower()
+                filename = f.get("filename", "")
                 bitrate  = f.get("bitRate", 0)
                 size     = f.get("size", 0)
 
-                # Detectăm extensia REALĂ din filename
-                is_mp3  = filename.endswith(".mp3")
-                is_flac = filename.endswith(".flac")
+                # detect extension only from filename
+                is_mp3  = filename.lower().endswith(".mp3")
+                is_flac = filename.lower().endswith(".flac")
 
-                # -- IGNORĂ PATH-URI INVALIDATE --
-                if filename.startswith("#"):
-                    continue
-                if "." not in filename:
+                if filename.startswith("#") or "." not in filename:
                     continue
 
-                # -- FILTRARE FINALĂ --
+                # FILTRARE
+                if is_flac or (is_mp3 and (bitrate >= 320 or size >= 6000000)):
+                    # găsim filePath REAL
+                    real_path = find_real_file_path(user, filename)
+                    if real_path:
+                        log(f"[FOUND] {filename} (path real: {real_path})")
+                        return user, real_path
+                    else:
+                        log(f"[WARN] Nu găsesc filePath real pentru {filename}")
 
-                # 1) FLAC — acceptat instant
-                if is_flac:
-                    filePath = filename.replace("\\", "\\\\")
-                    log(f"[FOUND] FLAC → {filePath}")
-                    return user, filePath
-
-                # 2) MP3 320kbps confirmat
-                if is_mp3 and bitrate >= 320:
-                    filePath = filename.replace("\\", "\\\\")
-                    log(f"[FOUND] MP3 320kbps → {filePath}")
-                    return user, filePath
-
-                # 3) MP3 > 6MB (în 99% cazuri = 320kbps)
-                if is_mp3 and bitrate == 0 and size >= 6_000_000:
-                    filePath = filename.replace("\\", "\\\\")
-                    log(f"[FOUND] MP3 probabil 320kbps (size={size}) → {filePath}")
-                    return user, filePath
-
-        log("[SEARCH] Rezultate, dar niciun fișier valid în acest batch.")
-
-    log(f"[TIMEOUT] Nu am găsit fișier acceptat pentru '{query}' în 90 sec.")
+    log(f"[TIMEOUT] Nimic acceptabil pentru '{query}' în 90 sec.")
     return None
 
 
-# ---------------- DOWNLOAD ----------------
-
 def download_until_complete(username, filepath, query):
-    log(f"[DOWNLOAD] Pornesc descărcarea pentru '{query}' → {filepath}")
+    log(f"[DOWNLOAD] Inițiez descărcarea → {filepath}")
     enqueue_download(username, filepath)
 
     while True:
         completed = get_completed_filenames()
         if any(query.lower() in x.lower() for x in completed):
-            log(f"[COMPLETE] Descărcare finalizată: {query}")
+            log(f"[COMPLETE] Descărcat: {query}")
             return True
         time.sleep(5)
 
-
-# ---------------- MAIN LOOP ----------------
 
 while True:
     df = load_df()
@@ -176,17 +158,17 @@ while True:
         time.sleep(60)
         continue
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         query = row["query"]
         entry_id = row["id"]
 
         log("\n====================")
-        log(f"   Procesare: {query}")
+        log(f" Procesare: {query}")
         log("====================")
 
         completed = get_completed_filenames()
         if any(query.lower() in x.lower() for x in completed):
-            log(f"[SKIP] '{query}' deja descărcat — șterg din listă.")
+            log(f"[SKIP] '{query}' deja descărcat — șterg.")
             df = df[df["id"] != entry_id]
             save_df(df)
             continue
@@ -194,15 +176,14 @@ while True:
         result = search_for_good_file(query)
 
         if not result:
-            log("[NEXT] Trec la următoarea melodie.")
+            log("[NEXT] Trec la următorul.")
             continue
 
         username, filepath = result
-
         if download_until_complete(username, filepath, query):
             df = df[df["id"] != entry_id]
             save_df(df)
 
     pause = get_cycle_pause()
-    log(f"[LOOP] Gata runda. Revin în {pause//60} minute.\n")
+    log(f"[LOOP] Finalizat. Revin în {pause//60} minute.\n")
     time.sleep(pause)
