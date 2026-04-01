@@ -1,12 +1,13 @@
-
 version: '3.9'
 services:
-  wanted-app:
+  slskd_wanted:
     image: ghcr.io/tommypopescu/slskd_wanted:latest
-    container_name: wanted-app
+    container_name: slskd_wanted
     environment:
-      - SLSKD_HOST=http://slskd:5030
-      - SLSKD_API_KEY=TOKENUL_TAU
+      - SLSKD_HOST=http://192.168.1.7:5030
+      - SLSKD_API_KEY=OXMRJ43VWQU71F9L68TZYHNP
     volumes:
-      - ./app/wanted.csv:/app/wanted.csv
+      - /ssd/appdata/slskd_wanted/wanted.csv:/app/wanted.csv
+    ports:
+      - "8000:8000"
     restart: always
