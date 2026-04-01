@@ -91,29 +91,37 @@ def search_for_mp3_320(query):
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
         for item in results:
-            log(f"[DEBUG ITEM] {item}")   # ← ADD THIS - LINIE Debug
-            f = item.get("file", {})
-            attrs = item.get("attributes", {})
+            user = item.get("username")
+            files = item.get("files", [])
 
-            ext = f.get("extension", "").lower()
-            br = attrs.get("bitRate", 0)
-            size = attrs.get("size", 0)
+            for f in files:
+                filename = f.get("filename", "").lower()
+                bitrate  = f.get("bitRate", 0)
+                size     = f.get("size", 0)
 
-            # 1) Acceptă FLAC instant
-            if ext == "flac":
-                log(f"[FOUND] FLAC → {f.get('filePath')}")
-                return item["username"], f["filePath"]
+        # detectare extensie reală prin filename
+        is_flac = filename.endswith(".flac")
+        is_mp3  = filename.endswith(".mp3")
 
-            # 2) Acceptă MP3 320 dacă bitrate există
-            if ext == "mp3" and br >= 320:
-                log(f"[FOUND] MP3 320kbps confirmat → {f.get('filePath')}")
-                return item["username"], f["filePath"]
+        # 1) FLAC — automat
+        if is_flac:
+            log(f"[FOUND] FLAC → {filename}")
+            return user, filename
 
-            # 3) Acceptă MP3 fără bitrate, dar cu size >= 6MB (aprox 320kbps)
-            # majoritatea 320kbps între 6–12MB la 3–5 minute
-            if ext == "mp3" and br == 0 and size >= 6_000_000:
-                log(f"[FOUND] MP3 probabil 320kbps (size {size}) → {f.get('filePath')}")
-                return item["username"], f["filePath"]
+        # 2) MP3 320kbps
+        if is_mp3 and bitrate >= 320:
+            log(f"[FOUND] MP3 320kbps → {filename}")
+            return user, filename
+
+        # 3) MP3 probabil 320 (size > 6MB)
+        # Libianca People e între 7–8MB => perfect
+        if is_mp3 and bitrate == 0 and size >= 6_000_000:
+            log(f"[FOUND] MP3 probabil 320kbps (size={size}) → {filename}")
+            return user, filename
+
+    # dacă nimic nu a trecut filtrul:
+    log("[SEARCH] Rezultate găsite, dar niciun MP3/FLAC valid.")
+    return None
 
 
 def download_until_complete(username, filepath, query):
