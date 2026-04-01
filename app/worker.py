@@ -109,6 +109,7 @@ def search_for_good_file(query):
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
         for item in results:
+            log("[FULL DEBUG ITEM] " + str(item))
             user = item.get("username")
             files = item.get("files", [])
 
