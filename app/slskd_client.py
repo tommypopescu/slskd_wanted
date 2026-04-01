@@ -9,55 +9,29 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-
-def safe_json(response):
+def safe_json(r):
     try:
-        return response.json()
-    except Exception:
-        return {
-            "error": "invalid_json",
-            "status": response.status_code,
-            "text": response.text
-        }
-
-# -------------------------------------
-# APPLICATION
-# -------------------------------------
-
-def app_state():
-    r = requests.get(f"{HOST}/api/v0/application", headers=HEADERS)
-    return safe_json(r)
-
-# -------------------------------------
-# SEARCHES
-# -------------------------------------
+        return r.json()
+    except:
+        return {"error": "invalid_json", "text": r.text}
 
 def search(query):
     payload = {
-        "searchText": query,
-        "options": {"timeout": 15000}
+        "searchText": query
     }
     r = requests.post(f"{HOST}/api/v0/searches", json=payload, headers=HEADERS)
-    return safe_json(r)
-
-def get_search_state(search_id):
-    r = requests.get(f"{HOST}/api/v0/searches/{search_id}", headers=HEADERS)
     return safe_json(r)
 
 def get_search_responses(search_id):
     r = requests.get(f"{HOST}/api/v0/searches/{search_id}/responses", headers=HEADERS)
     return safe_json(r)
 
-# -------------------------------------
-# DOWNLOADS (TRANSFERS)
-# -------------------------------------
-
 def list_downloads():
     r = requests.get(f"{HOST}/api/v0/transfers/downloads", headers=HEADERS)
     return safe_json(r)
 
-def enqueue_download(username, file_path):
-    payload = {"filePath": file_path}
+def enqueue_download(username, filepath):
+    payload = {"filePath": filepath}
     r = requests.post(
         f"{HOST}/api/v0/transfers/downloads/{username}",
         json=payload,
