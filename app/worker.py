@@ -30,7 +30,13 @@ def save_df(df):
 
 def get_completed_filenames():
     data = list_downloads()
-    items = data.get("items", [])
+
+    # slskd v0 poate întoarce listă SAU dict
+    if isinstance(data, list):
+        items = data
+    else:
+        items = data.get("items", [])
+
     completed = {
         item.get("fileName", "")
         for item in items
