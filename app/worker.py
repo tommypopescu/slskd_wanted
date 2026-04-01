@@ -28,7 +28,7 @@ def get_cycle_pause():
         minutes = int(cfg.get("cycle_pause_minutes", 30))
         return minutes * 60
     except:
-        return 1800  # fallback
+        return 1800  # fallback 30 minute
 
 
 # ---------------- CSV OPERATIONS ----------------
@@ -47,6 +47,7 @@ def save_df(df):
 # ---------------- NORMALIZARE RĂSPUNSURI ----------------
 
 def normalize_downloads_response(data):
+    """slskd poate întoarce listă sau dict cu 'items'."""
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -65,11 +66,11 @@ def get_completed_filenames():
 
 
 def normalize_search_response(data):
-    """slskd v0 poate întoarce listă SAU dict cu 'items'."""
+    """slskd v0 poate întoarce listă SAU dict {items:[]}"""
     if isinstance(data, list):
         return data
-    if isinstance(data, dict) and "items" in data:
-        return data["items"]
+    if isinstance(data, dict):
+        return data.get("items", [])
     return []
 
 
@@ -77,8 +78,8 @@ def normalize_search_response(data):
 
 def search_for_good_file(query):
     """
-    Găsește MP3 320kbps sau FLAC sau MP3 > 6MB,
-    în structura reală slskd (items[].files[]).
+    Găsește MP3 320kbps / FLAC / MP3 > 6MB din structura reală
+    (items[].files[]), conform debug-ului real furnizat.
     """
 
     log(f"[SEARCH] Pornesc căutare pentru: {query}")
@@ -105,7 +106,7 @@ def search_for_good_file(query):
 
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
-        # ITERĂM REZULTATELE REALISTE (user → lista lor de fișiere)
+        # ITERĂM REZULTATELE REALE (user → files[])
         for item in results:
             user = item.get("username")
             files = item.get("files", [])
@@ -115,11 +116,11 @@ def search_for_good_file(query):
                 bitrate  = f.get("bitRate", 0)
                 size     = f.get("size", 0)
 
-                # Detectăm extensia prin filename
+                # Detectăm extensia REALĂ din filename
                 is_mp3  = filename.endswith(".mp3")
                 is_flac = filename.endswith(".flac")
 
-                # -- IGNOR PATH-URI INVALIDATE --
+                # -- IGNORĂ PATH-URI INVALIDATE --
                 if filename.startswith("#"):
                     continue
                 if "." not in filename:
@@ -129,22 +130,25 @@ def search_for_good_file(query):
 
                 # 1) FLAC — acceptat instant
                 if is_flac:
-                    log(f"[FOUND] FLAC → {filename}")
-                    return user, filename
+                    filePath = filename.replace("\\", "\\\\")
+                    log(f"[FOUND] FLAC → {filePath}")
+                    return user, filePath
 
-                # 2) MP3 320kbps (bitrate confirmat)
+                # 2) MP3 320kbps confirmat
                 if is_mp3 and bitrate >= 320:
-                    log(f"[FOUND] MP3 320kbps → {filename}")
-                    return user, filename
+                    filePath = filename.replace("\\", "\\\\")
+                    log(f"[FOUND] MP3 320kbps → {filePath}")
+                    return user, filePath
 
-                # 3) MP3 probabil 320 (dimensiune mare)
+                # 3) MP3 > 6MB (în 99% cazuri = 320kbps)
                 if is_mp3 and bitrate == 0 and size >= 6_000_000:
-                    log(f"[FOUND] MP3 probabil 320kbps (size={size}) → {filename}")
-                    return user, filename
+                    filePath = filename.replace("\\", "\\\\")
+                    log(f"[FOUND] MP3 probabil 320kbps (size={size}) → {filePath}")
+                    return user, filePath
 
         log("[SEARCH] Rezultate, dar niciun fișier valid în acest batch.")
 
-    log(f"[TIMEOUT] Nu am găsit fișier acceptat pentru '{query}' în 90 secunde.")
+    log(f"[TIMEOUT] Nu am găsit fișier acceptat pentru '{query}' în 90 sec.")
     return None
 
 
