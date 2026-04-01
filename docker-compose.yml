@@ -2,7 +2,7 @@
 version: '3.9'
 services:
   wanted-app:
-    build: ./app
+    image: ghcr.io/tommypopescu/slskd_wanted:latest
     container_name: wanted-app
     environment:
       - SLSKD_HOST=http://slskd:5030
