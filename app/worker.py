@@ -91,6 +91,7 @@ def search_for_mp3_320(query):
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
         for item in results:
+            log(f"[DEBUG ITEM] {item}")   # ← ADD THIS - LINIE Debug
             f = item.get("file", {})
             attrs = item.get("attributes", {})
 
