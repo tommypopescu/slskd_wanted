@@ -92,8 +92,10 @@ def search_for_mp3_320(query):
 
         for item in results:
             f = item.get("file", {})
+            attrs = item.get("attributes", {})
+
             ext = f.get("extension", "").lower()
-            br = f.get("bitRate", 0)
+            br = attrs.get("bitRate", 0)
 
             if ext == "mp3" and br == 320:
                 log(f"[FOUND] MP3 320kbps → {f.get('filePath')}")
