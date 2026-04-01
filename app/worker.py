@@ -96,15 +96,23 @@ def search_for_mp3_320(query):
 
             ext = f.get("extension", "").lower()
             br = attrs.get("bitRate", 0)
+            size = attrs.get("size", 0)
 
-            if ext == "mp3" and br == 320:
-                log(f"[FOUND] MP3 320kbps → {f.get('filePath')}")
+            # 1) Acceptă FLAC instant
+            if ext == "flac":
+                log(f"[FOUND] FLAC → {f.get('filePath')}")
                 return item["username"], f["filePath"]
 
-        log("[SEARCH] Rezultate, dar fără MP3 320.")
+            # 2) Acceptă MP3 320 dacă bitrate există
+            if ext == "mp3" and br >= 320:
+                log(f"[FOUND] MP3 320kbps confirmat → {f.get('filePath')}")
+                return item["username"], f["filePath"]
 
-    log(f"[TIMEOUT] Nu am găsit MP3 320 pentru '{query}' în 90 sec.")
-    return None
+            # 3) Acceptă MP3 fără bitrate, dar cu size >= 6MB (aprox 320kbps)
+            # majoritatea 320kbps între 6–12MB la 3–5 minute
+            if ext == "mp3" and br == 0 and size >= 6_000_000:
+                log(f"[FOUND] MP3 probabil 320kbps (size {size}) → {f.get('filePath')}")
+                return item["username"], f["filePath"]
 
 
 def download_until_complete(username, filepath, query):
