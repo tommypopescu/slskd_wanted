@@ -5,8 +5,8 @@ import uuid
 
 app = FastAPI()
 
-# Servește UI-ul din /static
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# Mutăm UI-ul la /ui, ca să nu suprascriem rutele API
+app.mount("/ui", StaticFiles(directory="static", html=True), name="ui")
 
 CSV_PATH = "wanted.csv"
 
