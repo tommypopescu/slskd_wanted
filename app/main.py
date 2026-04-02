@@ -42,10 +42,20 @@ def list_wanted():
 @app.post("/wanted")
 def add_wanted(item: dict):
     df = load_df()
-    new_id = str(uuid.uuid4())
-    df.loc[len(df)] = [new_id, item["query"]]
+
+    new_row = {
+        "id": str(uuid.uuid4()),
+        "query": item["query"],
+        "status": "new",
+        "last_message": "Nou",
+        "last_attempt": ""
+    }
+
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     save_df(df)
-    return {"id": new_id, "query": item["query"]}
+
+    return new_row
+
 
 @app.delete("/wanted/{item_id}")
 def delete_wanted(item_id: str):
@@ -53,3 +63,14 @@ def delete_wanted(item_id: str):
     df = df[df["id"] != item_id]
     save_df(df)
     return {"deleted": item_id}
+
+from datetime import datetime
+
+@app.post("/wanted/{entry_id}/retry")
+def retry_now(entry_id: str):
+    df = load_df()
+    df.loc[df["id"] == entry_id, "status"] = "new"
+    df.loc[df["id"] == entry_id, "last_message"] = "Retry manual"
+    df.loc[df["id"] == entry_id, "last_attempt"] = datetime.utcnow().isoformat()
+    save_df(df)
+    return {"status": "ok"}

@@ -2,107 +2,22 @@
 <html lang="ro">
 <head>
 <meta charset="UTF-8">
-<title>Wanted Downloads</title>
+<title>Wanted list</title>
 
 <style>
-    body {
-        font-family: Arial, Helvetica, sans-serif;
-        background-color: #111;
-        color: #eee;
-        padding: 20px;
-    }
+body { font-family: Arial; background:#111; color:#eee; padding:20px }
+table { width:100%; border-collapse:collapse; margin-top:20px }
+th,td { padding:10px; border-bottom:1px solid #333 }
+th { color:#aaa }
+button { padding:6px 10px; border:none; border-radius:4px; cursor:pointer }
+.retry { background:#1976d2; color:white }
+.remove { background:#444; color:white }
 
-    h1 {
-        margin-bottom: 10px;
-    }
-
-    table {
-        border-collapse: collapse;
-        width: 100%;
-        margin-top: 20px;
-    }
-
-    th, td {
-        border-bottom: 1px solid #333;
-        padding: 10px;
-        text-align: left;
-    }
-
-    th {
-        background-color: #1b1b1b;
-        color: #aaa;
-    }
-
-    tr:hover {
-        background-color: #1a1a1a;
-    }
-
-    input[type="text"] {
-        padding: 8px;
-        width: 300px;
-        border-radius: 4px;
-        border: none;
-        outline: none;
-    }
-
-    button {
-        padding: 8px 14px;
-        margin-left: 5px;
-        border-radius: 4px;
-        border: none;
-        cursor: pointer;
-        background-color: #444;
-        color: #fff;
-    }
-
-    button:hover {
-        background-color: #666;
-    }
-
-    /* STATUS COLORS */
-    .status {
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.9em;
-        font-weight: bold;
-        display: inline-block;
-    }
-
-    .status.new {
-        background-color: #555;
-        color: #fff;
-    }
-
-    .status.found {
-        background-color: #2d5eff;
-        color: #fff;
-    }
-
-    .status.queued {
-        background-color: #ff9800;
-        color: #000;
-    }
-
-    .status.waiting {
-        background-color: #ffd54f;
-        color: #000;
-    }
-
-    .status.downloaded {
-        background-color: #2ecc71;
-        color: #000;
-    }
-
-    .status.error {
-        background-color: #e53935;
-        color: #fff;
-    }
-
-    small {
-        color: #aaa;
-        display: block;
-        margin-top: 4px;
-    }
+.status { padding:4px 8px; border-radius:4px; font-weight:bold }
+.status.new { background:#555 }
+.status.queued { background:#ff9800; color:black }
+.status.waiting { background:#ffd54f; color:black }
+.status.downloaded { background:#2ecc71; color:black }
 </style>
 </head>
 
@@ -110,73 +25,79 @@
 
 <h1>Wanted list</h1>
 
-<input id="query" type="text" placeholder="Artist - Track">
+<input id="query" placeholder="Artist - Track">
 <button onclick="addWanted()">Add</button>
 
 <table>
-    <thead>
-        <tr>
-            <th>Query</th>
-            <th>Status</th>
-            <th>Info</th>
-            <th>Action</th>
-        </tr>
-    </thead>
-    <tbody id="wantedTable">
-    </tbody>
+<thead>
+<tr>
+<th>Query</th>
+<th>Status</th>
+<th>Info</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="list"></tbody>
 </table>
 
 <script>
-async function loadWanted() {
-    const data = await fetch('/wanted').then(r => r.json());
-    const tbody = document.getElementById("wantedTable");
+const COOLDOWN_MIN = 30;
+
+function minutesLeft(lastAttempt) {
+    if (!lastAttempt) return "";
+    const last = new Date(lastAttempt);
+    const next = new Date(last.getTime() + COOLDOWN_MIN*60000);
+    const diff = Math.ceil((next - new Date())/60000);
+    return diff > 0 ? diff + " min" : "ready";
+}
+
+async function loadWanted(){
+    const data = await fetch('/wanted').then(r=>r.json());
+    const tbody = document.getElementById("list");
     tbody.innerHTML = "";
 
-    data.forEach(item => {
-        const tr = document.createElement("tr");
-
-        tr.innerHTML = `
-            <td>${item.query}</td>
+    data.forEach(i=>{
+        const retryText = minutesLeft(i.last_attempt);
+        tbody.innerHTML += `
+        <tr>
+            <td>${i.query}</td>
+            <td><span class="status ${i.status}">${i.status}</span></td>
             <td>
-                <span class="status ${item.status || 'new'}">
-                    ${item.status || 'new'}
-                </span>
+                ${i.last_message || ""}
+                <small>${retryText ? "Retry in: "+retryText : ""}</small>
             </td>
             <td>
-                ${item.last_message || '' }
-                <small>${item.last_attempt || ''}</small>
+                <button class="retry" onclick="retryNow('${i.id}')">Retry now</button>
+                <button class="remove" onclick="removeItem('${i.id}')">Remove</button>
             </td>
-            <td>
-                <button onclick="removeWanted('${item.id}')">Remove</button>
-            </td>
-        `;
-
-        tbody.appendChild(tr);
+        </tr>`;
     });
 }
 
-async function addWanted() {
-    const q = document.getElementById("query").value.trim();
-    if (!q) return;
-
-    await fetch('/wanted', {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ query: q })
+async function addWanted(){
+    const q=document.getElementById("query").value.trim();
+    if(!q) return;
+    await fetch('/wanted',{
+        method:"POST",
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:q})
     });
-
-    document.getElementById("query").value = "";
+    document.getElementById("query").value="";
     loadWanted();
 }
 
-async function removeWanted(id) {
-    await fetch('/wanted/' + id, { method: "DELETE" });
+async function retryNow(id){
+    await fetch(`/wanted/${id}/retry`, { method:"POST" });
+    loadWanted();
+}
+
+async function removeItem(id){
+    await fetch(`/wanted/${id}`, { method:"DELETE" });
     loadWanted();
 }
 
 loadWanted();
-setInterval(loadWanted, 5000);
+setInterval(loadWanted,5000);
 </script>
-
 </body>
 </html>
