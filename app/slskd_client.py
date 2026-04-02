@@ -55,9 +55,6 @@ def enqueue_download(username, filePath):
         f"{HOST}/api/v0/transfers/downloads/{username}",
         headers=HEADERS,
         json=payload
-    )
+        )
 
-    return {
-        "status": r.status_code,
-        "response": safe_json(r)
-    }
+    return {"status": r.status_code, "response": safe_json(r)}

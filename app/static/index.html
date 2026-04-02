@@ -1,103 +1,65 @@
 <!DOCTYPE html>
-<html lang="ro">
+<html>
 <head>
-<meta charset="UTF-8">
 <title>Wanted list</title>
-
 <style>
-body { font-family: Arial; background:#111; color:#eee; padding:20px }
-table { width:100%; border-collapse:collapse; margin-top:20px }
-th,td { padding:10px; border-bottom:1px solid #333 }
-th { color:#aaa }
-button { padding:6px 10px; border:none; border-radius:4px; cursor:pointer }
-.retry { background:#1976d2; color:white }
-.remove { background:#444; color:white }
-
-.status { padding:4px 8px; border-radius:4px; font-weight:bold }
-.status.new { background:#555 }
-.status.queued { background:#ff9800; color:black }
-.status.waiting { background:#ffd54f; color:black }
-.status.downloaded { background:#2ecc71; color:black }
+body{background:#111;color:#eee;font-family:Arial;padding:20px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid #333}
+.status{padding:4px 6px;border-radius:4px;font-weight:bold}
+.new{background:#555}
+.queued{background:#ff9800;color:black}
+.waiting{background:#ffd54f;color:black}
+.downloaded{background:#4caf50}
+button{padding:5px 8px;margin-right:5px}
 </style>
 </head>
-
 <body>
 
 <h1>Wanted list</h1>
-
-<input id="query" placeholder="Artist - Track">
-<button onclick="addWanted()">Add</button>
+<input id="q"><button onclick="add()">Add</button>
 
 <table>
-<thead>
-<tr>
-<th>Query</th>
-<th>Status</th>
-<th>Info</th>
-<th>Action</th>
-</tr>
-</thead>
-<tbody id="list"></tbody>
+<thead><tr><th>Query</th><th>Status</th><th>Info</th><th>Action</th></tr></thead>
+<tbody id="t"></tbody>
 </table>
 
 <script>
-const COOLDOWN_MIN = 30;
+const CD=30;
 
-function minutesLeft(lastAttempt) {
-    if (!lastAttempt) return "";
-    const last = new Date(lastAttempt);
-    const next = new Date(last.getTime() + COOLDOWN_MIN*60000);
-    const diff = Math.ceil((next - new Date())/60000);
-    return diff > 0 ? diff + " min" : "ready";
+function mins(ts){
+ if(!ts)return "";
+ const d=new Date(ts);const n=(d.getTime()+CD*60000-Date.now())/60000;
+ return n>0?Math.ceil(n)+" min":"ready";
 }
 
-async function loadWanted(){
-    const data = await fetch('/wanted').then(r=>r.json());
-    const tbody = document.getElementById("list");
-    tbody.innerHTML = "";
-
-    data.forEach(i=>{
-        const retryText = minutesLeft(i.last_attempt);
-        tbody.innerHTML += `
-        <tr>
-            <td>${i.query}</td>
-            <td><span class="status ${i.status}">${i.status}</span></td>
-            <td>
-                ${i.last_message || ""}
-                <small>${retryText ? "Retry in: "+retryText : ""}</small>
-            </td>
-            <td>
-                <button class="retry" onclick="retryNow('${i.id}')">Retry now</button>
-                <button class="remove" onclick="removeItem('${i.id}')">Remove</button>
-            </td>
-        </tr>`;
-    });
+async function load(){
+ const data=await fetch('/wanted').then(r=>r.json());
+ t.innerHTML="";
+ data.forEach(i=>{
+  t.innerHTML+=`<tr>
+<td>${i.query}</td>
+<td><span class="status ${i.status}">${i.status}</span></td>
+<td>${i.last_message}<br><small>${mins(i.last_attempt)}</small></td>
+<td>
+<button onclick="retry('${i.id}')">Retry now</button>
+<button onclick="del('${i.id}')">Remove</button>
+</td>
+</tr>`;
+ });
 }
 
-async function addWanted(){
-    const q=document.getElementById("query").value.trim();
-    if(!q) return;
-    await fetch('/wanted',{
-        method:"POST",
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({query:q})
-    });
-    document.getElementById("query").value="";
-    loadWanted();
+async function add(){
+ const q=document.getElementById('q').value;
+ await fetch('/wanted',{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
+ q.value="";
+ load();
 }
 
-async function retryNow(id){
-    await fetch(`/wanted/${id}/retry`, { method:"POST" });
-    loadWanted();
-}
+async function retry(id){ await fetch(`/wanted/${id}/retry`,{method:"POST"}); load();}
+async function del(id){ await fetch(`/wanted/${id}`,{method:"DELETE"}); load();}
 
-async function removeItem(id){
-    await fetch(`/wanted/${id}`, { method:"DELETE" });
-    loadWanted();
-}
-
-loadWanted();
-setInterval(loadWanted,5000);
+load();setInterval(load,5000);
 </script>
 </body>
 </html>
