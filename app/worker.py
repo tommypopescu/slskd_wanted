@@ -137,22 +137,39 @@ def search_for_good_file(query):
 # ================== DOWNLOAD ==================
 
 def download_until_complete(username, filePath, query):
-    log(f"[DOWNLOAD] Trimit cerere → {filePath}")
+    log(f"[DOWNLOAD] Încerc descărcarea → {filePath}")
 
     resp = enqueue_download(username, filePath)
     log(f"[DOWNLOAD RESPONSE] {resp}")
 
-    if not resp.get("ok"):
-        log("[ERROR] slskd a respins cererea de download.")
-        return
+    status = resp.get("status", 0)
+    body = resp.get("response", "")
 
-    while True:
-        completed = get_completed_filenames()
-        if any(query.lower() in x.lower() for x in completed):
-            log(f"[COMPLETE] Descărcat: {query}")
-            return
+    # ✅ 2xx = request acceptat, chiar dacă ulterior e refuzat de remote
+    if not (200 <= status < 300):
+        log("[ERROR] slskd a respins cererea înainte de transfer.")
+        return False
+
+    # ✅ monitorizăm downloadul
+    start_time = time.time()
+    timeout = 90  # secunde
+
+    while time.time() - start_time < timeout:
+        downloads = normalize_downloads_response(list_downloads())
+
+        for d in downloads:
+            if (
+                d.get("filename", "").lower() == query.lower()
+                and d.get("state") not in ("Cancelled", "Failed")
+            ):
+                if d.get("state") == "Completed":
+                    log(f"[COMPLETE] Descărcat: {query}")
+                    return True
+
         time.sleep(5)
 
+    log("[INFO] Transferul nu a pornit sau a fost respins de remote (File not shared).")
+    return False
 
 # ================== MAIN LOOP ==================
 
