@@ -185,7 +185,8 @@ while True:
         status = row["status"]
         last_attempt = row["last_attempt"]
 
-        if status == "downloaded":
+        if status in ("downloaded", "queued"):
+            # deja pus în queue, NU mai încercăm
             continue
 
         if status == "waiting" and last_attempt:
@@ -200,9 +201,10 @@ while True:
             continue
 
         for username, path in candidates:
-            completed = try_download(entry_id, username, path, query)
-            if completed:
-                break
+            # facem UN SINGUR enqueue
+            try_download(entry_id, username, path, query)
+            break   # STOP imediat, chiar dacă e File not shared
+
 
     log("[WORKER] Pauză 5 minute")
     time.sleep(300)
