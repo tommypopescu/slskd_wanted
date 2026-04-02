@@ -1,5 +1,6 @@
 import os
 import requests
+import ntpath
 
 HOST = os.getenv("SLSKD_HOST")
 API_KEY = os.getenv("SLSKD_API_KEY")
@@ -46,12 +47,13 @@ def list_downloads():
 
 def enqueue_download(username, filePath):
     """
-    ✅ EXACT ca în Swagger:
-    POST /api/v0/transfers/downloads/{username}
-    Body = LISTĂ de QueueDownloadRequest
+    ✅ EXACT conform Swagger + model QueueDownloadRequest
     """
+    filename = ntpath.basename(filePath)
+
     payload = [
         {
+            "filename": filename,
             "filePath": filePath
         }
     ]
