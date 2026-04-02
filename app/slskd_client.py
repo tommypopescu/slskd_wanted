@@ -17,44 +17,47 @@ def safe_json(r):
 
 
 def search(query):
-    r = requests.post(
-        f"{HOST}/api/v0/searches",
-        headers=HEADERS,
-        json={"searchText": query}
+    return safe_json(
+        requests.post(
+            f"{HOST}/api/v0/searches",
+            headers=HEADERS,
+            json={"searchText": query}
+        )
     )
-    return safe_json(r)
 
 
 def get_search_responses(search_id):
-    r = requests.get(
-        f"{HOST}/api/v0/searches/{search_id}/responses",
-        headers=HEADERS
+    return safe_json(
+        requests.get(
+            f"{HOST}/api/v0/searches/{search_id}/responses",
+            headers=HEADERS
+        )
     )
-    return safe_json(r)
 
 
 def list_downloads():
-    r = requests.get(
-        f"{HOST}/api/v0/transfers/downloads",
-        headers=HEADERS
+    return safe_json(
+        requests.get(
+            f"{HOST}/api/v0/transfers/downloads",
+            headers=HEADERS
+        )
     )
-    return safe_json(r)
 
 
 def enqueue_download(username, filePath):
     """
-    slskd așteaptă LISTĂ de QueueDownloadRequest,
-    nu obiect singular.
+    ✅ EXACT ca în Swagger:
+    POST /api/v0/transfers/downloads/{username}
+    Body = LISTĂ de QueueDownloadRequest
     """
     payload = [
         {
-            "username": username,
             "filePath": filePath
         }
     ]
 
     r = requests.post(
-        f"{HOST}/api/v0/transfers/downloads",
+        f"{HOST}/api/v0/transfers/downloads/{username}",
         headers=HEADERS,
         json=payload
     )
