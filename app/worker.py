@@ -137,11 +137,18 @@ def search_for_good_file(query):
 # ================== DOWNLOAD ==================
 
 def download_until_complete(username, filePath, query):
-    log(f"[DOWNLOAD] Inițiez descărcarea → {filePath}")
-    enqueue_download(username, filePath)
+    log(f"[DOWNLOAD] Trimit cerere → {filePath}")
+
+    resp = enqueue_download(username, filePath)
+    log(f"[DOWNLOAD RESPONSE] {resp}")
+
+    if not resp.get("ok"):
+        log("[ERROR] slskd a respins cererea de download.")
+        return
 
     while True:
-        if any(query.lower() in x.lower() for x in get_completed_filenames()):
+        completed = get_completed_filenames()
+        if any(query.lower() in x.lower() for x in completed):
             log(f"[COMPLETE] Descărcat: {query}")
             return
         time.sleep(5)
