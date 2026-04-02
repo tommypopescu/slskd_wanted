@@ -1,14 +1,14 @@
-version: '3.9'
+
 services:
-  slskd_wanted:
+  wanted-app:
     image: ghcr.io/tommypopescu/slskd_wanted:latest
-    container_name: slskd_wanted
+    container_name: wanted-app
     environment:
       - SLSKD_HOST=http://192.168.1.7:5030
       - SLSKD_API_KEY=OXMRJ43VWQU71F9L68TZYHNP
-      - SLSKD_CYCLE_PAUSE_MINUTES=30
+      - SLSKD_CYCLE_PAUSE_MINUTES=5
     volumes:
-      - /ssd/appdata/slskd_wanted/wanted.csv:/app/wanted.csv
+      - /ssd/appdata/slskd_wanted/wanted.csv:/app/wanted.csv    
     ports:
-      - "8000:8000"
+      - "8000:8000"   # ← AICI este portul interfeței web
     restart: always
