@@ -13,26 +13,38 @@ def safe_json(r):
     try:
         return r.json()
     except:
-        return {"error": "invalid_json", "text": r.text}
+        return {}
 
 def search(query):
-    payload = {"searchText": query}
-    r = requests.post(f"{HOST}/api/v0/searches", json=payload, headers=HEADERS)
-    return safe_json(r)
+    return safe_json(
+        requests.post(
+            f"{HOST}/api/v0/searches",
+            headers=HEADERS,
+            json={"searchText": query},
+        )
+    )
 
 def get_search_responses(search_id):
-    r = requests.get(f"{HOST}/api/v0/searches/{search_id}/responses", headers=HEADERS)
-    return safe_json(r)
+    return safe_json(
+        requests.get(
+            f"{HOST}/api/v0/searches/{search_id}/responses",
+            headers=HEADERS,
+        )
+    )
 
 def list_downloads():
-    r = requests.get(f"{HOST}/api/v0/transfers/downloads", headers=HEADERS)
-    return safe_json(r)
-
-def enqueue_download(username, filepath):
-    payload = {"filePath": filepath}
-    r = requests.post(
-        f"{HOST}/api/v0/transfers/downloads/{username}",
-        json=payload,
-        headers=HEADERS
+    return safe_json(
+        requests.get(
+            f"{HOST}/api/v0/transfers/downloads",
+            headers=HEADERS,
+        )
     )
-    return safe_json(r)
+
+def enqueue_download(username, filePath):
+    return safe_json(
+        requests.post(
+            f"{HOST}/api/v0/transfers/downloads/{username}",
+            headers=HEADERS,
+            json={"filePath": filePath},
+        )
+    )
