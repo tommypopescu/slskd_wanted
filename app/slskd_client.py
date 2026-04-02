@@ -16,7 +16,6 @@ def safe_json(r):
     except:
         return {"status": r.status_code, "text": r.text}
 
-
 def search(query):
     return safe_json(
         requests.post(
@@ -26,7 +25,6 @@ def search(query):
         )
     )
 
-
 def get_search_responses(search_id):
     return safe_json(
         requests.get(
@@ -34,7 +32,6 @@ def get_search_responses(search_id):
             headers=HEADERS
         )
     )
-
 
 def list_downloads():
     return safe_json(
@@ -44,11 +41,7 @@ def list_downloads():
         )
     )
 
-
 def enqueue_download(username, filePath):
-    """
-    ✅ EXACT conform Swagger + model QueueDownloadRequest
-    """
     filename = ntpath.basename(filePath)
 
     payload = [
