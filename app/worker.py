@@ -1,24 +1,15 @@
+import json
 import time
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from slskd_client import (
-    search,
-    get_search_responses,
-    list_downloads,
-    enqueue_download,
-)
+from slskd_client import search, get_search_responses
 
 CSV_PATH = "wanted.csv"
-POLLING_SECONDS = 90
-COOLDOWN_MINUTES = 30
+POLLING_SECONDS = 60
 
 
-# -------------------------------------------------
-# Utils
-# -------------------------------------------------
-
-def log(msg: str):
+def log(msg):
     print(msg, flush=True)
 
 
@@ -27,7 +18,7 @@ def load_df():
         df = pd.read_csv(CSV_PATH, dtype=str)
     except:
         df = pd.DataFrame(
-            columns=["id", "query", "status", "last_message", "last_attempt"]
+            columns=["id","query","status","last_message","last_attempt","found_sources"]
         )
     return df.fillna("")
 
@@ -36,11 +27,14 @@ def save_df(df):
     df.to_csv(CSV_PATH, index=False)
 
 
-def update_status(entry_id: str, status: str, message: str):
+def update_sources(entry_id, sources):
     df = load_df()
-    df.loc[df["id"] == entry_id, "status"] = status
-    df.loc[df["id"] == entry_id, "last_message"] = message
+
+    df.loc[df["id"] == entry_id, "found_sources"] = json.dumps(sources)
+    df.loc[df["id"] == entry_id, "status"] = "found"
+    df.loc[df["id"] == entry_id, "last_message"] = f"Găsit la {len(sources)} surse"
     df.loc[df["id"] == entry_id, "last_attempt"] = datetime.utcnow().isoformat()
+
     save_df(df)
 
 
@@ -52,159 +46,62 @@ def normalize_search(data):
     return []
 
 
-def normalize_downloads(data):
-    if isinstance(data, dict):
-        return data.get("items", [])
-    if isinstance(data, list):
-        return data
-    return []
-
-
-# -------------------------------------------------
-# Search phase
-# -------------------------------------------------
-
-def find_candidates(query: str):
-    log(f"[SEARCH] Pornesc căutare pentru: {query}")
-
+def discover_sources(query):
+    log(f"[SEARCH] Caut: {query}")
     s = search(query)
-    search_id = s.get("id")
-    if not search_id:
+    sid = s.get("id")
+    if not sid:
         return []
 
-    log(f"[SEARCH] ID: {search_id}")
-    candidates = []
+    sources = []
+    seen = set()
 
-    for sec in range(POLLING_SECONDS):
+    for _ in range(POLLING_SECONDS):
         time.sleep(1)
-        results = normalize_search(get_search_responses(search_id))
-
-        if not results:
-            continue
-
-        log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
+        results = normalize_search(get_search_responses(sid))
 
         for item in results:
-            if not item.get("hasFreeUploadSlot"):
-                continue
-            if item.get("queueLength", -1) != 0:
-                continue
-
-            username = item.get("username")
-
+            user = item.get("username")
             for f in item.get("files", []):
-                filename = f.get("filename")
-                if not filename or filename.startswith("#"):
+                fn = f.get("filename")
+                if not fn:
                     continue
 
-                bitrate = f.get("bitRate", 0)
-                size = f.get("size", 0)
+                is_audio = fn.lower().endswith(".mp3") or fn.lower().endswith(".flac")
+                if not is_audio:
+                    continue
 
-                is_mp3 = filename.lower().endswith(".mp3")
-                is_flac = filename.lower().endswith(".flac")
+                key = f"{user}|{fn}"
+                if key in seen:
+                    continue
+                seen.add(key)
 
-                if (
-                    is_flac
-                    or (is_mp3 and bitrate >= 320)
-                    or (is_mp3 and bitrate == 0 and size >= 6_000_000)
-                ):
-                    candidates.append((username, filename))
+                sources.append({
+                    "user": user,
+                    "path": fn,
+                    "bitrate": f.get("bitRate", 0),
+                    "size": f.get("size", 0),
+                    "last_seen": datetime.utcnow().isoformat()
+                })
 
-        if candidates:
+        if len(sources) >= 5:   # limită backbone
             break
 
-    return candidates
+    return sources
 
 
-# -------------------------------------------------
-# Download phase
-# -------------------------------------------------
-
-def try_download(entry_id: str, username: str, file_path: str, query: str) -> bool:
-    """
-    Încearcă download pentru un singur candidat.
-    Returnează True dacă s-a descărcat complet.
-    False în caz de refuz / waiting.
-    """
-    log(f"[DOWNLOAD] {username} → {file_path}")
-
-    resp = enqueue_download(username, file_path)
-    log(f"[DOWNLOAD RESPONSE] {resp}")
-
-    status = resp.get("status", 0)
-    if not (200 <= status < 300):
-        update_status(entry_id, "error", "Eroare API slskd")
-        return False
-
-    update_status(entry_id, "queued", "Găsit și pus în coada locală")
-
-    start_time = time.time()
-    timeout = 90  # secunde
-
-    while time.time() - start_time < timeout:
-        downloads = normalize_downloads(list_downloads())
-
-        for d in downloads:
-            dname = d.get("filename")
-            if not dname:
-                continue
-
-            if file_path.endswith(dname):
-                state = d.get("state", "")
-
-                if state == "Completed":
-                    update_status(entry_id, "downloaded", "Descărcare finalizată")
-                    return True
-
-                if state in ("Failed", "Cancelled"):
-                    update_status(entry_id, "waiting", "Remote a refuzat (File not shared)")
-                    return False
-
-        time.sleep(5)
-
-    update_status(entry_id, "waiting", "Așteaptă disponibilitatea remote")
-    return False
-
-
-# -------------------------------------------------
-# Main loop
-# -------------------------------------------------
+# ---------------- MAIN LOOP ----------------
 
 while True:
     df = load_df()
-    now = datetime.utcnow()
-
-    if df.empty:
-        log("[WORKER] Lista goală")
-        time.sleep(60)
-        continue
 
     for _, row in df.iterrows():
-        entry_id = row["id"]
-        query = row["query"]
-        status = row["status"]
-        last_attempt = row["last_attempt"]
-
-        if status in ("downloaded", "queued"):
-            # deja pus în queue, NU mai încercăm
+        if row["status"] in ("found", "downloaded"):
             continue
 
-        if status == "waiting" and last_attempt:
-            last = datetime.fromisoformat(last_attempt)
-            if now - last < timedelta(minutes=COOLDOWN_MINUTES):
-                continue
+        sources = discover_sources(row["query"])
+        if sources:
+            update_sources(row["id"], sources)
 
-        log(f"\n=== Procesare: {query} ===")
-
-        candidates = find_candidates(query)
-        if not candidates:
-            continue
-
-        for username, path in candidates:
-            # facem UN SINGUR enqueue
-            try_download(entry_id, username, path, query)
-            break   # STOP imediat, chiar dacă e File not shared
-
-
-    log("[WORKER] Pauză 5 minute")
-    time.sleep(300)
+    log("[WORKER] Pauză 10 minute")
+    time.sleep(600)

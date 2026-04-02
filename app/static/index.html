@@ -5,45 +5,51 @@
 <style>
 body{background:#111;color:#eee;font-family:Arial;padding:20px}
 table{width:100%;border-collapse:collapse}
-th,td{padding:8px;border-bottom:1px solid #333}
-.status{padding:4px 6px;border-radius:4px;font-weight:bold}
+th,td{padding:10px;border-bottom:1px solid #333}
+.status{padding:4px 8px;border-radius:4px;font-weight:bold}
 .new{background:#555}
-.queued{background:#ff9800;color:black}
-.waiting{background:#ffd54f;color:black}
-.downloaded{background:#4caf50}
-button{padding:5px 8px;margin-right:5px}
+.found{background:#2d5eff}
+.details{background:#1a1a1a;padding:10px;margin-top:5px}
+.source{padding:5px 0;border-bottom:1px solid #333}
+button{padding:4px 8px;margin-left:5px}
 </style>
 </head>
-<body>
 
+<body>
 <h1>Wanted list</h1>
 <input id="q"><button onclick="add()">Add</button>
 
 <table>
-<thead><tr><th>Query</th><th>Status</th><th>Info</th><th>Action</th></tr></thead>
+<tr><th>Query</th><th>Status</th><th>Info</th></tr>
 <tbody id="t"></tbody>
 </table>
 
 <script>
-const CD=30;
-
-function mins(ts){
- if(!ts)return "";
- const d=new Date(ts);const n=(d.getTime()+CD*60000-Date.now())/60000;
- return n>0?Math.ceil(n)+" min":"ready";
+function openSlskd(user){
+    window.open(`/ui/#/users/${user}`, "_blank");
 }
 
 async function load(){
- const data=await fetch('/wanted').then(r=>r.json());
+ const data = await fetch('/wanted').then(r=>r.json());
  t.innerHTML="";
  data.forEach(i=>{
-  t.innerHTML+=`<tr>
+  let sources = [];
+  try{ sources = JSON.parse(i.found_sources||"[]"); }catch{}
+
+  let srcHtml = sources.map(s=>`
+    <div class="source">
+      <b>${s.user}</b> — ${s.bitrate}kbps — ${Math.round(s.size/1024/1024)} MB
+      <br><code>${s.path}</code>
+      <button onclick="openSlskd('${s.user}')">Open in slskd</button>
+    </div>`).join("");
+
+  t.innerHTML+=`
+<tr>
 <td>${i.query}</td>
 <td><span class="status ${i.status}">${i.status}</span></td>
-<td>${i.last_message}<br><small>${mins(i.last_attempt)}</small></td>
 <td>
-<button onclick="retry('${i.id}')">Retry now</button>
-<button onclick="del('${i.id}')">Remove</button>
+${i.last_message}
+${sources.length?`<div class="details">${srcHtml}</div>`:""}
 </td>
 </tr>`;
  });
@@ -56,10 +62,8 @@ async function add(){
  load();
 }
 
-async function retry(id){ await fetch(`/wanted/${id}/retry`,{method:"POST"}); load();}
-async function del(id){ await fetch(`/wanted/${id}`,{method:"DELETE"}); load();}
-
-load();setInterval(load,5000);
+load();
+setInterval(load,10000);
 </script>
 </body>
 </html>
