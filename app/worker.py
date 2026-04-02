@@ -1,6 +1,7 @@
 import time
 import pandas as pd
 import requests
+
 from slskd_client import (
     search,
     get_search_responses,
@@ -17,13 +18,17 @@ def log(msg):
     print(msg, flush=True)
 
 
+# ================== CONFIG ==================
+
 def get_cycle_pause():
     try:
         cfg = requests.get(f"{API_BASE}/config").json()
         return int(cfg.get("cycle_pause_minutes", 30)) * 60
     except:
-        return 1800
+        return 1800  # fallback 30 min
 
+
+# ================== CSV ==================
 
 def load_df():
     try:
@@ -36,13 +41,7 @@ def save_df(df):
     df.to_csv(CSV_PATH, index=False)
 
 
-def normalize_search_response(data):
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        return data.get("items", [])
-    return []
-
+# ================== DOWNLOAD STATE ==================
 
 def normalize_downloads_response(data):
     if isinstance(data, list):
@@ -59,6 +58,16 @@ def get_completed_filenames():
         for x in items
         if x.get("state") == "Completed"
     }
+
+
+# ================== SEARCH ==================
+
+def normalize_search_response(data):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("items", [])
+    return []
 
 
 def search_for_good_file(query):
@@ -87,8 +96,18 @@ def search_for_good_file(query):
 
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
+        # ===== REGULA TA FINALĂ =====
+        # free slot + queueLength == 0
+
         for item in results:
             username = item.get("username")
+
+            has_slot = item.get("hasFreeUploadSlot", False)
+            queue_len = item.get("queueLength", -1)
+
+            if not has_slot or queue_len != 0:
+                continue  # SKIP total
+
             for f in item.get("files", []):
                 filename = f.get("filename")
                 bitrate = f.get("bitRate", 0)
@@ -97,16 +116,25 @@ def search_for_good_file(query):
                 if not filename or filename.startswith("#"):
                     continue
 
-                is_mp3 = filename.endswith(".mp3")
-                is_flac = filename.endswith(".flac")
+                is_mp3 = filename.lower().endswith(".mp3")
+                is_flac = filename.lower().endswith(".flac")
 
-                if is_flac or (is_mp3 and (bitrate >= 320 or size >= 6_000_000)):
-                    log(f"[FOUND] → {filename}")
+                # ✅ FLAC
+                if is_flac:
+                    log(f"[FOUND] FLAC (slot liber, queue 0) → {filename}")
                     return username, filename
 
-    log("[TIMEOUT] Nimic acceptabil")
+                # ✅ MP3 320 sau mare
+                if is_mp3 and (bitrate >= 320 or size >= 6_000_000):
+                    log(f"[FOUND] MP3 320 (slot liber, queue 0) → {filename}")
+                    return username, filename
+
+    log("[TIMEOUT] Niciun fișier valid"
+        " (slot liber + queue 0 + calitate bună)")
     return None
 
+
+# ================== DOWNLOAD ==================
 
 def download_until_complete(username, filePath, query):
     log(f"[DOWNLOAD] Inițiez descărcarea → {filePath}")
@@ -118,6 +146,8 @@ def download_until_complete(username, filePath, query):
             return
         time.sleep(5)
 
+
+# ================== MAIN LOOP ==================
 
 while True:
     df = load_df()
@@ -146,6 +176,7 @@ while True:
 
         user, path = result
         download_until_complete(user, path, query)
+
         df = df[df["id"] != entry_id]
         save_df(df)
 
