@@ -18,17 +18,17 @@ def log(msg):
     print(msg, flush=True)
 
 
-# ================== CONFIG ==================
+# ================= CONFIG =================
 
 def get_cycle_pause():
     try:
         cfg = requests.get(f"{API_BASE}/config").json()
         return int(cfg.get("cycle_pause_minutes", 30)) * 60
     except:
-        return 1800  # fallback 30 min
+        return 1800   # 30 min fallback
 
 
-# ================== CSV ==================
+# ================= CSV =================
 
 def load_df():
     try:
@@ -41,7 +41,7 @@ def save_df(df):
     df.to_csv(CSV_PATH, index=False)
 
 
-# ================== DOWNLOAD STATE ==================
+# ================= DOWNLOAD STATE =================
 
 def normalize_downloads_response(data):
     if isinstance(data, list):
@@ -51,16 +51,11 @@ def normalize_downloads_response(data):
     return []
 
 
-def get_completed_filenames():
-    items = normalize_downloads_response(list_downloads())
-    return {
-        x.get("fileName", "")
-        for x in items
-        if x.get("state") == "Completed"
-    }
+def get_active_downloads():
+    return normalize_downloads_response(list_downloads())
 
 
-# ================== SEARCH ==================
+# ================= SEARCH =================
 
 def normalize_search_response(data):
     if isinstance(data, list):
@@ -70,7 +65,11 @@ def normalize_search_response(data):
     return []
 
 
-def search_for_good_file(query):
+def find_candidates(query):
+    """
+    Returnează LISTĂ de candidați valizi:
+    (username, filePath)
+    """
     log(f"[SEARCH] Pornesc căutare pentru: {query}")
 
     s = search(query)
@@ -78,13 +77,14 @@ def search_for_good_file(query):
 
     if not search_id:
         log("[ERROR] Search ID invalid")
-        return None
+        return []
 
     log(f"[SEARCH] ID: {search_id}")
 
+    candidates = []
+
     for sec in range(POLLING_SECONDS):
         time.sleep(1)
-
         results = normalize_search_response(
             get_search_responses(search_id)
         )
@@ -96,17 +96,12 @@ def search_for_good_file(query):
 
         log(f"[SEARCH] {len(results)} rezultate pentru '{query}'")
 
-        # ===== REGULA TA FINALĂ =====
-        # free slot + queueLength == 0
-
         for item in results:
             username = item.get("username")
-
-            has_slot = item.get("hasFreeUploadSlot", False)
-            queue_len = item.get("queueLength", -1)
-
-            if not has_slot or queue_len != 0:
-                continue  # SKIP total
+            if not item.get("hasFreeUploadSlot", False):
+                continue
+            if item.get("queueLength", -1) != 0:
+                continue
 
             for f in item.get("files", []):
                 filename = f.get("filename")
@@ -119,59 +114,56 @@ def search_for_good_file(query):
                 is_mp3 = filename.lower().endswith(".mp3")
                 is_flac = filename.lower().endswith(".flac")
 
-                # ✅ FLAC
-                if is_flac:
-                    log(f"[FOUND] FLAC (slot liber, queue 0) → {filename}")
-                    return username, filename
+                # criterii calitate
+                if (
+                    is_flac
+                    or (is_mp3 and bitrate >= 320)
+                    or (is_mp3 and bitrate == 0 and size >= 6_000_000)
+                ):
+                    candidates.append((username, filename))
 
-                # ✅ MP3 320 sau mare
-                if is_mp3 and (bitrate >= 320 or size >= 6_000_000):
-                    log(f"[FOUND] MP3 320 (slot liber, queue 0) → {filename}")
-                    return username, filename
+        if candidates:
+            break
 
-    log("[TIMEOUT] Niciun fișier valid"
-        " (slot liber + queue 0 + calitate bună)")
-    return None
+    return candidates
 
 
-# ================== DOWNLOAD ==================
+# ================= DOWNLOAD =================
 
-def download_until_complete(username, filePath, query):
+def try_download(username, filePath, query):
     log(f"[DOWNLOAD] Încerc descărcarea → {filePath}")
 
     resp = enqueue_download(username, filePath)
     log(f"[DOWNLOAD RESPONSE] {resp}")
 
     status = resp.get("status", 0)
-    body = resp.get("response", "")
-
-    # ✅ 2xx = request acceptat, chiar dacă ulterior e refuzat de remote
     if not (200 <= status < 300):
-        log("[ERROR] slskd a respins cererea înainte de transfer.")
         return False
 
-    # ✅ monitorizăm downloadul
-    start_time = time.time()
-    timeout = 90  # secunde
+    # monitorizăm progresul
+    start = time.time()
+    timeout = 90
 
-    while time.time() - start_time < timeout:
-        downloads = normalize_downloads_response(list_downloads())
-
-        for d in downloads:
+    while time.time() - start < timeout:
+        for d in get_active_downloads():
             if (
                 d.get("filename", "").lower() == query.lower()
-                and d.get("state") not in ("Cancelled", "Failed")
+                and d.get("direction") == "Download"
             ):
-                if d.get("state") == "Completed":
+                state = d.get("state", "")
+                if state == "Completed":
                     log(f"[COMPLETE] Descărcat: {query}")
                     return True
-
+                if state in ("Failed", "Cancelled"):
+                    return False
         time.sleep(5)
 
-    log("[INFO] Transferul nu a pornit sau a fost respins de remote (File not shared).")
+    # dacă nu a pornit (File not shared)
+    log("[INFO] Transfer refuzat de remote (File not shared)")
     return False
 
-# ================== MAIN LOOP ==================
+
+# ================= MAIN LOOP =================
 
 while True:
     df = load_df()
@@ -189,20 +181,23 @@ while True:
         log(f" Procesare: {query}")
         log("====================")
 
-        if any(query.lower() in x.lower() for x in get_completed_filenames()):
+        candidates = find_candidates(query)
+
+        if not candidates:
+            log("[INFO] Niciun candidat eligibil acum.")
+            continue
+
+        success = False
+        for username, path in candidates:
+            if try_download(username, path, query):
+                success = True
+                break
+
+        if success:
             df = df[df["id"] != entry_id]
             save_df(df)
-            continue
-
-        result = search_for_good_file(query)
-        if not result:
-            continue
-
-        user, path = result
-        download_until_complete(user, path, query)
-
-        df = df[df["id"] != entry_id]
-        save_df(df)
+        else:
+            log("[INFO] Toți candidații au returnat 'File not shared'.")
 
     pause = get_cycle_pause()
     log(f"[LOOP] Revin în {pause//60} minute\n")
